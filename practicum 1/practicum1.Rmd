@@ -1,0 +1,398 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r}
+library(RMySQL)
+library(sqldf)
+library(dplyr)
+library(tidyverse)
+dbconp1 <- dbConnect(MySQL(), user='root', password='vyas.ve', dbname='bs');
+```
+
+![ERD Diagram](C:/Users/Ved/Downloads/practicum.png)
+
+
+```{r}
+birdstrikesdata <- read.csv("D:/NEU/Assignments/DBMS/Practicum 1/BirdStrikesData.csv")
+```
+
+
+```{r}
+colnames(birdstrikesdata) <- c('record_id','aircraft_type','airport_name', 'altitude_bin','aircraft_make_model','wildlife_number_struck','wildlife_number_struck_actual','effect_impact_to_flight', 'flight_date', 'effect_indicated_damage','aircraft_number_of_engines','aircraft_airline_operator','origin_state','when_phase_of_flight', 'conditions_precipitation','remains_of_wildlife_collected','remains_of_wildlife_sent_to_Smithsonian','remarks','wildlife_size', 'conditions_sky', 'wildlife_species','pilot_warned_of_birds_or_wildlife','cost_total', 'feet_above_ground','number_of_people_injured','is_aircraft_large')
+```
+
+Building Tables in MySQL
+```{sql connection=dbconp1}
+DROP TABLE IF EXISTS aircraft_details;
+```
+
+```{sql connection=dbconp1}
+DROP TABLE IF EXISTS location;
+```
+
+```{sql connection=dbconp1}
+DROP TABLE IF EXISTS altitude;
+```
+
+```{sql connection=dbconp1}
+DROP TABLE IF EXISTS wildlife;
+```
+
+```{sql connection=dbconp1}
+DROP TABLE IF EXISTS phase;
+```
+
+```{sql connection=dbconp1}
+DROP TABLE IF EXISTS flights;
+```
+
+```{sql connection=dbconp1}
+CREATE TABLE IF NOT EXISTS aircraft_details(  
+  aircraft_make_model VARCHAR(30) PRIMARY KEY,
+  aircraft_type VARCHAR(30), 
+  aircraft_number_of_engines INT,
+  is_aircraft_large VARCHAR(10)
+);
+```
+
+
+```{sql connection=dbconp1}
+CREATE TABLE IF NOT EXISTS location(  
+  airport_name VARCHAR(100) PRIMARY KEY,
+  origin_state VARCHAR(30)
+);
+```
+
+```{sql connection=dbconp1}
+CREATE TABLE IF NOT EXISTS altitude(  
+  feet_above_ground INT PRIMARY KEY,
+  altitude_bin VARCHAR(30)
+);
+```
+
+```{sql connection=dbconp1}
+CREATE TABLE IF NOT EXISTS wildlife(  
+  wildlife_id INT PRIMARY KEY,
+  wildlife_size VARCHAR(20)
+);
+```
+
+```{sql connection=dbconp1}
+CREATE TABLE IF NOT EXISTS phase(  
+  phase_id INT PRIMARY KEY,
+  when_phase_of_flight VARCHAR(20)
+);
+```
+
+
+```{sql connection=dbconp1}
+CREATE TABLE IF NOT EXISTS flights(
+  record_id INT PRIMARY KEY,
+  aircraft_make_model VARCHAR(30), 
+  aircraft_airline_operator VARCHAR(100),
+  airport_name VARCHAR(100),
+  month INT,
+  day INT,
+  year INT,
+  time VARCHAR(10),
+  conditions_precipitation VARCHAR(50),
+  conditions_sky VARCHAR(30), 
+  effect_impact_to_flight VARCHAR(100),
+  effect_indicated_damage VARCHAR(100),
+  cost_total INT,
+  number_of_people_injured INT,
+  feet_above_ground INT, 
+  wildlife_number_struck VARCHAR(100),
+  wildlife_number_struck_actual INT,
+  remains_of_wildlife_collected VARCHAR(10),
+  remains_of_wildlife_sent_to_Smithsonian VARCHAR(10),
+  wildlife_species VARCHAR(50), 
+  pilot_warned_of_birds_or_wildlife VARCHAR(50),
+  Remarks VARCHAR(200),
+  wildlife_id INT,
+  phase_id INT
+);
+```
+
+
+Cleaning the dataframe before loading the data into Database -
+
+```{r}
+birdstrikesdata[, c(11,23,24)] <- sapply(birdstrikesdata[, c(11,23,24)], as.numeric)
+```
+
+
+```{r}
+birdstrikesdata1 <- birdstrikesdata
+```
+
+```{r}
+options(sqldf.driver = "SQLite")
+```
+
+
+```{r}
+birdstrikesdata1<-birdstrikesdata1 %>%
+  na_if("") %>%
+  na.omit
+```
+
+```{r}
+birdstrikesdata1<-separate(birdstrikesdata1, flight_date, into = c("flight_date", "time"), sep=" ")
+```
+```{r}
+birdstrikesdata1<-separate(birdstrikesdata1, flight_date, into = c("month", "day", "year"), sep="/")
+```
+
+
+```{r}
+birdstrikesdata1[, c(9,10,11)] <- sapply(birdstrikesdata1[, c(9,10,11)], as.numeric)
+```
+
+
+```{r}
+head(birdstrikesdata1)
+```
+
+
+```{r}
+df.Aircraft_details<-sqldf('SELECT DISTINCT(aircraft_make_model), aircraft_type, aircraft_number_of_engines, is_aircraft_large FROM birdstrikesdata1 where aircraft_make_model!="" ')
+```
+
+
+```{r}
+df.Location<-sqldf('SELECT DISTINCT(airport_name), origin_state FROM birdstrikesdata1 where airport_name!="" ')
+```
+
+```{r}
+df.Altitude<-sqldf('SELECT DISTINCT(feet_above_ground), altitude_bin FROM birdstrikesdata1 where feet_above_ground!="" ')
+```
+
+```{r}
+
+df.Wildlife <- sqldf::sqldf("select 1 as wildlife_id, wildlife_size from `birdstrikesdata1` group by wildlife_size")
+
+# assign an artificial PK
+n.Wildlife <- nrow(df.Wildlife)
+df.Wildlife[,1] <- seq(1, n.Wildlife)
+```
+
+```{r}
+
+df.Phase <- sqldf::sqldf("select 1 as phase_id, when_phase_of_flight from `birdstrikesdata1` group by when_phase_of_flight")
+
+# assign an artificial PK
+n.Phase <- nrow(df.Phase)
+df.Phase[,1] <- seq(1, n.Phase)
+```
+
+```{r}
+df.Flights <- data.frame(record_id = birdstrikesdata1$record_id,
+                         aircraft_make_model = birdstrikesdata1$aircraft_make_model,
+                         aircraft_airline_operator = birdstrikesdata1$aircraft_airline_operator,
+                         airport_name = birdstrikesdata1$airport_name,
+                         month = birdstrikesdata1$month,
+                         day = birdstrikesdata1$day,
+                         year = birdstrikesdata1$year,
+                         time = birdstrikesdata1$time,
+                         conditions_precipitation = birdstrikesdata1$conditions_precipitation,
+                         conditions_sky = birdstrikesdata1$conditions_sky,
+                         effect_impact_to_flight = birdstrikesdata1$effect_impact_to_flight,
+                         effect_indicated_damage = birdstrikesdata1$effect_indicated_damage,
+                         cost_total = birdstrikesdata1$cost_total,
+                         number_of_people_injured = birdstrikesdata1$number_of_people_injured,
+                         feet_above_ground = birdstrikesdata1$feet_above_ground,
+                         wildlife_number_struck = birdstrikesdata1$wildlife_number_struck,
+                         wildlife_number_struck_actual = birdstrikesdata1$wildlife_number_struck_actual,
+                         remains_of_wildlife_collected = birdstrikesdata1$remains_of_wildlife_collected,
+                         remains_of_wildlife_sent_to_Smithsonian = birdstrikesdata1$remains_of_wildlife_sent_to_Smithsonian,
+                         wildlife_species = birdstrikesdata1$wildlife_species,
+                         pilot_warned_of_birds_or_wildlife = birdstrikesdata1$pilot_warned_of_birds_or_wildlife,
+                         Remarks = birdstrikesdata1$remarks,
+                         wildlife_id = 1,
+                         phase_id = 1)
+```
+
+```{r}
+# let's link each flight to the correct airline by assigning the FK to the 
+# correct PK
+n.Flights <- nrow(df.Flights)
+# process each row (flight) one by one
+for (r in 1:n.Flights) {
+  # find the airline PK for that flight in the airlines table
+  a <- df.Phase$phase_id[which(df.Phase$when_phase_of_flight == birdstrikesdata1$when_phase_of_flight[r])]
+  df.Flights$phase_id[r] <- a
+}
+
+```
+
+
+```{r}
+# let's link each flight to the correct airline by assigning the FK to the 
+# correct PK
+n.Flights <- nrow(df.Flights)
+# process each row (flight) one by one
+for (r in 1:n.Flights) {
+  # find the airline PK for that flight in the airlines table
+  a <- df.Wildlife$wildlife_id[which(df.Wildlife$wildlife_size == birdstrikesdata1$wildlife_size[r])]
+  df.Flights$wildlife_id[r] <- a
+}
+```
+
+
+
+```{r }
+dbWriteTable(dbconp1, name="phase", df.Phase, overwrite = T)
+dbWriteTable(dbconp1, "flights", df.Flights, overwrite = T)
+```
+
+```{r }
+dbWriteTable(dbconp1, "wildlife", df.Wildlife, overwrite = T)
+dbWriteTable(dbconp1, "altitude", df.Altitude, overwrite = T)
+dbWriteTable(dbconp1, "location", df.Location, overwrite = T)
+dbWriteTable(dbconp1, "aircraft_details", df.Aircraft_details, overwrite = T)
+```
+
+```{sql connection=dbconp1}
+SELECT * FROM phase LIMIT 5;
+```
+
+```{sql connection=dbconp1}
+SELECT * FROM phase LIMIT 5;
+```
+
+```{sql showFlights, connection=dbconp1}
+SELECT * FROM flights LIMIT 5;
+```
+
+```{sql connection=dbconp1}
+SELECT * FROM wildlife LIMIT 5;
+```
+
+```{sql connection=dbconp1}
+SELECT * FROM altitude LIMIT 5;
+```
+
+```{sql connection=dbconp1}
+SELECT * FROM location LIMIT 5;
+```
+
+```{sql connection=dbconp1}
+SELECT * FROM aircraft_details LIMIT 5;
+```
+
+4.
+```{sql connection=dbconp1}
+SELECT flights.aircraft_airline_operator,COUNT(flights.aircraft_airline_operator), phase.when_phase_of_flight 
+FROM flights
+INNER JOIN phase
+ON flights.phase_id=phase.phase_id
+WHERE phase.when_phase_of_flight = 'Climb' OR phase.when_phase_of_flight = 'Take-off run'
+GROUP BY aircraft_airline_operator;
+```
+
+5.
+```{sql connection=dbconp1}
+SELECT airport_name, COUNT(airport_name) AS incidents_airport
+FROM flights
+GROUP BY airport_name
+ORDER BY incidents_airport DESC;
+```
+
+
+6.
+```{sql connection=dbconp1}
+SELECT year, COUNT(year) AS incidents_per_year
+FROM flights
+GROUP BY year;
+```
+7.
+```{r}
+library(ggplot2)
+library(DBI)
+```
+
+```{r}
+birdstrikesdata2<-birdstrikesdata1
+```
+
+```{sql connection=dbconp1}
+SELECT flights.year, COUNT(flights.year) AS incidents_per_year, phase.when_phase_of_flight 
+FROM flights
+INNER JOIN phase
+ON flights.phase_id=phase.phase_id
+WHERE flights.year>=2008
+AND flights.year<=2011
+AND phase.when_phase_of_flight != 'Parked' 
+AND phase.when_phase_of_flight != 'Taxi'
+GROUP BY flights.year, phase.when_phase_of_flight
+ORDER BY flights.year ASC,phase.when_phase_of_flight ASC;
+```
+
+```{r}
+data_viz<-dbGetQuery(conn = dbconp1, statement ="SELECT flights.year, COUNT(flights.year) AS incidents_per_year, phase.when_phase_of_flight 
+FROM flights
+INNER JOIN phase
+ON flights.phase_id=phase.phase_id
+WHERE flights.year>=2008
+AND flights.year<=2011
+AND phase.when_phase_of_flight != 'Parked' 
+AND phase.when_phase_of_flight != 'Taxi'
+GROUP BY flights.year, phase.when_phase_of_flight
+ORDER BY flights.year ASC,phase.when_phase_of_flight ASC;")
+```
+
+
+```{r}
+data_viz_try<-data_viz %>% mutate(phase =
+                                case_when(when_phase_of_flight == "Take-off run" ~ "A", 
+                                          when_phase_of_flight == "Climb" ~ "A",
+                                          when_phase_of_flight == "Descent" ~ "B",
+                                          when_phase_of_flight == "Approach" ~ "B",
+                                          when_phase_of_flight == "Landing Roll" ~ "B")
+)
+```
+
+
+```{r}
+ggplot(data=data_viz_try, mapping= aes(x=phase, y=incidents_per_year)) +
+  geom_bar(stat="identity")+
+  facet_wrap(~year)+
+  labs(title = "Number of bird strikes incidents per year (2008-2011) during take-off/climbing and during descent/approach/landing", x="Phase of Flight", y="Number of Incidents" )
+
+```
+
+8.
+```{sql connection=dbconp1}
+DROP PROCEDURE IF EXISTS DeleteARow;
+```
+
+```{sql connection=dbconp1}
+CREATE PROCEDURE DeleteARow()
+BEGIN
+  DELETE FROM flights WHERE record_id=208159;
+END
+```
+
+```{sql connection=dbconp1}
+CALL DeleteARow()
+```
+We see that the record with record_id=208159 has been deleted.
+```{sql connection=dbconp1}
+SELECT * 
+FROM flights 
+WHERE record_id=208159;
+```
+
+
+
+
+```{r}
+dbDisconnect(dbconp1)
+```
+
+
