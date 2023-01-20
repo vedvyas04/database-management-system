@@ -1,0 +1,1335 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+TEAM MEMBERS -
+1. Ved Vyas
+2. Dominique Schreiner
+
+
+
+PART 1
+Q1.
+
+![ERD Diagram](C:/Users/Ved/Downloads/Practicum2 PART1ERD.png)
+
+Q2.
+
+```{r}
+library(sqldf)
+library(XML)
+library(dplyr, warn.conflicts = FALSE)
+library(RSQLite)
+library(xml2)
+library(httr)
+library(tidyverse)
+library(methods)
+library(data.table)
+library(lubridate)
+library(magrittr)
+```
+
+```{r}
+#fpath = "/users/domschrein/desktop/practicum2/"
+#dbfile = "practicum2.sqlite"
+
+path = "D:/NEU/Assignments/DBMS/Practicum 2/"
+dbfile = "practicum2.sqlite"
+
+
+dbcon <- dbConnect(RSQLite::SQLite(), "practicum2.sqlite")
+dbExecute(dbcon, "PRAGMA foreign_keys = OFF")
+```
+
+
+Creating Tables in SQLite
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS PubDate;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS JournalIssue;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Journal;
+```
+
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Author;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS History;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS PubmedArticle;
+```
+
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS PubDate(  
+  PubDate_ID VARCHAR(10) PRIMARY KEY,
+  Year INT NULL, 
+  Month VARCHAR(10)
+);
+```
+
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS JournalIssue(  
+  Journal_Issue_ID VARCHAR(10) PRIMARY KEY,
+  Volume INT,
+  Issue INT,
+  PubDate_ID VARCHAR(10),
+  FOREIGN KEY (PubDate_ID) REFERENCES PubDate(PubDate_ID)
+);
+```
+
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS Journal(  
+  Journal_ID VARCHAR(10) PRIMARY KEY,
+  ISSN_No VARCHAR(30),
+  ISSN_Type VARCHAR(30),
+  Journal_Issue_ID VARCHAR(10),
+  FOREIGN KEY (Journal_Issue_ID) REFERENCES JournalIssue(Journal_Issue_ID)
+);
+```
+
+
+```{sql connection=dbcon}
+CREATE TABLE Author(
+        article_id INT,
+        author_id INT,
+        last_name VARCHAR(300),
+        first_name VARCHAR(300),
+        full_name VARCHAR(600)
+);
+```
+
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS History(  
+  History_ID VARCHAR(10) PRIMARY KEY,
+  Year INT,
+  Month INT,
+  Day INT
+);
+```
+
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS PubmedArticle(  
+  PubmedArticle_ID VARCHAR(10) PRIMARY KEY,
+  Article_ID VARCHAR(10),
+  History_ID VARCHAR(10),
+  FOREIGN KEY (Article_ID) REFERENCES Article(Article_ID),
+  FOREIGN KEY (History_ID) REFERENCES PubmedData(History_ID)
+);
+```
+
+
+
+PART ONE - SECTION 3
+```{r}
+#xmlFile <- "/users/domschrein/desktop/practicum2/pubmed_sample.xml"
+#xmlObj <- xmlTreeParse(xmlFile, useInternalNodes = TRUE)
+
+
+xmlFile <- "D:/NEU/Assignments/DBMS/Practicum 2/pubmed_sample.xml"
+xmlObj <- xmlParse(xmlFile)
+
+root <- xmlRoot(xmlObj)
+xmlName(root)
+```
+
+```{r}
+n <- xmlSize(root)
+```
+
+
+Creating dataframes
+```{r}
+PubDatedf <- data.frame(PubDate_ID = integer(), Year = character(), Month= character(),  stringsAsFactors = F)
+
+JournalIssuedf <- data.frame(Journal_Issue_ID = integer(), Volume = integer(), Issue = character(), PubDate_ID = integer(), stringsAsFactors = F)
+
+Journaldf <- data.frame(Journal_ID = integer(), ISSN_No = integer(), ISSN_Type = character(), Journal_Issue_ID = integer(), stringsAsFactors = F)
+
+Authordf <- data.frame (article_id = integer(),author_id = integer(),last_name = character(),first_name = character(),stringsAsFactors = FALSE)
+
+Articledf <- data.frame(Article_ID = integer(), AuthorList_ID = integer(), ArticleDate_ID = integer(), Journal_ID = integer(), stringsAsFactors = F)
+
+Historydf <- data.frame(History_ID = integer(),  Year = integer(), Month = integer(), Day = integer(), stringsAsFactors = F)
+
+PubmedArticledf <- data.frame(PubmedArticle_ID = integer(),  Article_ID = integer(), History_ID = integer(), stringsAsFactors = F)
+
+```
+
+
+Inserting values in DFs
+PubdDatedf
+```{r}
+PubDatedf <- data.frame(PubDate_ID = integer(), Year = character(), Month= character(),  stringsAsFactors = F)
+PubDate_ID = 1
+for(i in 1:n)
+{
+  node = root[[i]]
+  Y_PubdDatedf <- xpathSApply(node, ".//PubDate/Year", xmlValue)
+  M_PubdDatedf <- xpathSApply(node, ".//PubDate/Month", xmlValue)
+    if (length(M_PubdDatedf) == 0 & length(Y_PubdDatedf) == 0)
+  {
+    x <- xpathSApply(node,".//PubDate/MedlineDate",xmlValue)
+    Y_PubdDatedf <- substring(x, 1,4)
+    M_PubdDatedf <- substring(x, 6,8)
+  
+  }
+  if (length(M_PubdDatedf) == 0)
+  {
+    M_PubdDatedf <- "Null"
+  }
+  if (length(Y_PubdDatedf) == 0)
+  {
+    Y_PubdDatedf <- "Null"
+  }
+
+  if(length(PubDatedf$PubDate_ID[which(PubDatedf$Year == Y_PubdDatedf & PubDatedf$Month == M_PubdDatedf)]) == 0)
+  {
+    newrow <- c(PubDate_ID, Y_PubdDatedf, M_PubdDatedf)
+    PubDatedf[nrow(PubDatedf) + 1,] <- newrow
+    PubDate_ID <- PubDate_ID + 1  
+    
+  }
+ 
+}
+
+```
+
+
+
+JournalIssuedf
+```{r}
+JournalIssuedf <- data.frame(Journal_Issue_ID = integer(), Volume = integer(), Issue = integer(), PubDate_ID = integer(), stringsAsFactors = F)
+Journal_Issue_ID = 5
+for(i in 1:n)
+{
+  node = root[[i]]
+  V <- xpathSApply(node, ".//Volume", xmlValue)
+  I <- xpathSApply(node, ".//Issue", xmlValue)
+  Y <- xpathSApply(node, ".//PubDate/Year", xmlValue)
+  M <- xpathSApply(node, ".//PubDate/Month", xmlValue)
+  
+  if (length(M) == 0 & length(Y) == 0)
+  {
+    x <- xpathSApply(node,".//PubDate/MedlineDate",xmlValue)
+    Y <- substring(x, 1,4)
+    M <- substring(x, 6,8)
+  
+  }
+  if (length(M) == 0)
+  {
+    M <- "Null"
+  }
+  if (length(Y) == 0)
+  {
+    Y <- "Null"
+  }
+  #FK
+  #cat(Y,M)
+z<-PubDatedf$PubDate_ID[which(PubDatedf$Year == Y & PubDatedf$Month == M )] 
+#print(z)
+ 
+  
+  if(length(JournalIssuedf$Journal_Issue_ID[which(JournalIssuedf$Volume == V & JournalIssuedf$Issue == I)]) == 0)
+  {
+    newrow <- c(Journal_Issue_ID, V, I, z)
+    JournalIssuedf[nrow(JournalIssuedf) + 1,] <- newrow
+    Journal_Issue_ID <- Journal_Issue_ID + 1  
+    
+  }
+ 
+}
+
+```
+
+
+Journaldf
+```{r}
+Journaldf <- data.frame(Journal_ID = integer(), ISSN_No = integer(), ISSN_Type = character(), Journal_Issue_ID = integer(), stringsAsFactors = F)
+Journal_ID = 10
+for(i in 1:n)
+{
+  node = root[[i]]
+  a <- xpathSApply(node, ".//ISSN", xmlValue)
+  b <- xpathSApply(node, ".//ISSN/@IssnType")
+  V <- xpathSApply(node, ".//Volume", xmlValue)
+  I <- xpathSApply(node, ".//Issue", xmlValue)
+  
+  #FK
+  z<-JournalIssuedf$Journal_Issue_ID[which(JournalIssuedf$Volume == V & JournalIssuedf$Issue == I )] 
+  #print(z)
+ 
+  
+  if(length(Journaldf$Journal_ID[which(Journaldf$Volume == V & Journaldf$Issue == I)]) == 0)
+  {
+    newrow <- c(Journal_ID, a, b, z)
+    Journaldf[nrow(Journaldf) + 1,] <- newrow
+    Journal_ID <- Journal_ID + 1  
+    
+  }
+ 
+}
+
+```
+
+
+
+Author
+```{r}
+Authordf <- data.frame (article_id = integer(),author_id = integer(),last_name = character(),first_name = character(),stringsAsFactors = FALSE)
+
+s=1;
+
+for(m in 1:19)
+{
+  node <- root[[m]]
+  pubmeddata_node<-node[[1]]
+  vals<-"count(./Article/AuthorList/Author)"
+  
+  no_of_children_authors<- xpathSApply(pubmeddata_node,vals,xmlChildren)
+
+  lastname<-"./Article/AuthorList/Author/LastName"
+  lastname_author<- xpathSApply(pubmeddata_node,lastname,xmlValue)
+
+  forename<-"./Article/AuthorList/Author/ForeName"
+  forename_author<- xpathSApply(pubmeddata_node,forename,xmlValue)
+  
+  initials<-"./Article/AuthorList/Author/Initials"
+  initials_author<- xpathSApply(pubmeddata_node,initials,xmlValue)
+
+  for(i in 1:no_of_children_authors)
+  {
+      Authordf[s,1]<-as.integer(m)
+      Authordf[s,2]<-as.integer(s)
+      Authordf[s,3]<-lastname_author[[i]]
+      Authordf[s,4]<-forename_author[[i]]
+      s<-s+1
+  }
+}
+
+
+Authordf$full_name <- paste(Authordf$first_name, Authordf$last_name)
+
+row.names(Authordf) <- NULL
+
+```
+
+
+History
+```{r}
+
+Historydf <- data.frame(History_ID = integer(),  counthistory = character(), stringsAsFactors = F)
+History_ID = 100
+for(i in 1:n)
+{
+  node = root[[i]]
+  pubmeddata_node<-node[[2]]
+  vals<-pubmeddata_node[[1]]
+ 
+  xpathjournal1 <-"count(./PubMedPubDate)"
+ 
+  iter<- xpathSApply(vals,xpathjournal1,xmlValue)
+
+     if(length(Historydf$History_ID[which(Historydf$counthistory == iter)]) == 0)
+     {
+       newrow <- c(History_ID, iter)
+       Historydf[nrow(Historydf) + 1,] <- newrow
+       History_ID <- History_ID + 1  
+     }
+}
+```
+PubmedArticle
+```{r}
+
+PubmedArticledf <- data.frame(PubmedArticle_ID = integer(), History_ID = integer(), stringsAsFactors = F)
+PubmedArticle_ID = 1
+
+for(i in 1:n)
+{
+  node = root[[i]]
+  pubmeddata_node<-node[[2]]
+  vals<-pubmeddata_node[[1]]
+ 
+  xpathjournal1 <-"count(./PubMedPubDate)"
+  iter<- xpathSApply(vals,xpathjournal1,xmlValue)
+
+ z<-Historydf$History_ID[which(Historydf$counthistory == iter)]
+  
+  if(length(PubmedArticledf$PubmedArticle_ID[which(PubmedArticledf$History_ID == iter)]) == 0)
+  {
+    newrow <- c(PubmedArticle_ID, z)
+    PubmedArticledf[nrow(PubmedArticledf) + 1,] <- newrow
+    PubmedArticle_ID <- PubmedArticle_ID + 1  
+  } 
+}
+
+```
+
+WRITING TABLES
+
+```{r}
+
+dbWriteTable(dbcon, "PubDate", PubDatedf, overwrite = T)
+dbWriteTable(dbcon, "JournalIssue", JournalIssuedf,overwrite = T)
+dbWriteTable(dbcon, "Journal", Journaldf, overwrite = T)
+dbWriteTable(dbcon, "PubmedArticle", PubmedArticledf, overwrite = T)
+dbWriteTable(dbcon, "Author", Authordf, overwrite = T)
+dbWriteTable(dbcon, "History", Historydf, overwrite = T)
+```
+
+
+
+
+PART 2
+Q1.
+![ERD Diagram](C:/Users/Ved/Downloads/Practicum 2 Star Schema1.png)
+```{r}
+library(RSQLite)
+
+fpath = "D:/NEU/Assignments/DBMS/Practicum 2/"
+dbfile = "practicum2star.sqlite"
+
+dbcon <- dbConnect(RSQLite::SQLite(), paste0(fpath,dbfile))
+```
+
+Creating Tables
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS author_star;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS journal_star;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS pubmed_article_star;
+```
+
+```{sql connection=dbcon}
+
+CREATE TABLE author_star(
+        article_id INT,
+        author_id INT,
+        last_name VARCHAR(300),
+        first_name VARCHAR(300),
+        initials VARCHAR(300)
+);
+```
+
+
+```{sql connection=dbcon}
+CREATE TABLE journal_star(
+                      article_id INT,
+                          issn VARCHAR(300),
+                          issn_type_name VARCHAR(300),
+                          journal_issue_cited_medium VARCHAR(300),
+                          volume VARCHAR(300),
+                          issue VARCHAR(300),
+                          Journal_title VARCHAR(300),
+                          iso_abbreviation VARCHAR(300),
+                          publication_year VARCHAR(300),
+                          publication_month VARCHAR(300)
+);
+```
+
+```{sql connection=dbcon}
+CREATE TABLE pubmed_article_star(article_id INT,
+                          medlinecitation_statusid VARCHAR(300),
+                          owner VARCHAR(300),
+                          pmid_version VARCHAR(300),
+                          pmid INT,
+                          dates_created VARCHAR(300),
+                          dates_completed VARCHAR(300),
+                          dates_revised VARCHAR(300),
+                          article_pubmodel VARCHAR(300),
+                          article_title VARCHAR(300),
+                          if_author_list_complete VARCHAR(300),
+                          language VARCHAR(300),
+                          if_grant_list_completed VARCHAR(300)
+);
+```
+
+Creating Dataframes
+```{r}
+
+pubmed_article.df <- data.frame (article_id = integer(),
+                          medlinecitation_statusid = character(),
+                          owner = character(),
+                          pmid_version = character(),
+                          pmid = integer(),
+                          dates_created = character(),
+                          dates_completed = character(),
+                          dates_revised = character(),
+                          article_pubmodel = character(),
+                          article_title = character(),
+                          if_author_list_complete= character(),
+                          language = character(),
+                          if_grant_list_completed = character(),
+                          stringsAsFactors = FALSE)  
+
+journal.df <- data.frame (article_id = integer(),
+                          issn = character(),
+                          issn_type_name = character(),
+                          journal_issue_cited_medium = character(),
+                          volume = character(),
+                          issue = character(),
+                          Journal_title = character(),
+                          iso_abbreviation = character(),
+                          publication_year=character(),
+                          publication_month=character(),
+                          stringsAsFactors = FALSE)
+
+
+
+author.df <- data.frame (article_id = integer(),
+                          author_id = integer(),
+                          last_name = character(),
+                          first_name = character(),
+                          initials = character(),
+                          stringsAsFactors = FALSE
+                          )
+
+
+```
+
+Filling values in Data frames
+```{r warning=FALSE}
+
+numPO=19
+for (m in 1:numPO)
+  {
+  node <- root[[m]]
+  pubmed_article <- node[[1]]
+  medlinecitation_status <- xmlAttrs(pubmed_article)
+
+  m_medlinecitation_status<- medlinecitation_status[[2]]
+  xpathEx00 <-"//MedlineCitation/Article"
+  
+  m_articlepubmodeltitle <- xpathSApply(pubmed_article,xpathEx00,xmlAttrs)
+  m_pubmodel_name<- m_articlepubmodeltitle[[m]]
+  
+  m_pmid <- xmlValue(pubmed_article[[1]][[1]])
+  b0 <- xmlAttrs(pubmed_article[[1]])
+  m_pmid_version<-b0[[1]]
+  
+  date_created_year <- xmlValue(pubmed_article[[2]][[1]][[1]])
+  
+  date_created_month <- xmlValue(pubmed_article[[2]][[2]][[1]])
+  
+  date_created_day <- xmlValue(pubmed_article[[2]][[3]][[1]])
+  
+  m_date_created <- paste(date_created_year, date_created_month, date_created_day, sep="-") %>% ymd() %>% as.Date()
+  
+  strDates1 <- as.character(m_date_created)
+
+  date_completed_year <- xmlValue(pubmed_article[[3]][[1]][[1]])
+
+  date_completed_month <- xmlValue(pubmed_article[[3]][[2]][[1]])
+  date_completed_day <- xmlValue(pubmed_article[[3]][[3]][[1]])
+
+  m_date_completed <- paste(date_completed_year, date_completed_month, date_completed_day, sep="-") %>% ymd() %>% as.Date()
+  
+  strDates2 <- as.character(m_date_completed)
+  
+  date_revised_year <- xmlValue(pubmed_article[[4]][[1]][[1]])
+
+  date_revised_month <- xmlValue(pubmed_article[[4]][[2]][[1]])
+
+  date_revised_day <- xmlValue(pubmed_article[[4]][[3]][[1]])
+
+  m_date_revised <- paste(date_revised_year, date_revised_month, date_revised_day, sep="-") %>% ymd() %>% as.Date()
+  
+  strDates3 <- as.character(m_date_revised)
+  
+  xpathEx0 <-"//MedlineCitation/Article/ArticleTitle"
+  
+  m_articletitle <- xpathSApply(pubmed_article,xpathEx0,xmlValue)
+  m_article_title<- m_articletitle[[m]]
+
+  xpathEx1 <-"//MedlineCitation/Article/AuthorList"
+
+  x1<-xpathSApply(pubmed_article,xpathEx1,xmlAttrs)
+ 
+  m_authorlist_ifcomplete <- x1[[1]]
+
+  xpathEx2 <-"//MedlineCitation/Article/Language"
+  
+  x2 <- xpathSApply(pubmed_article,xpathEx2,xmlValue)
+  m_language <- x2[[1]]
+
+  xpathEx3 <-"//MedlineCitation/Article/GrantList"
+
+  x3<-xpathSApply(pubmed_article,xpathEx3,xmlAttrs)
+  m_grantlist_ifcomplete <- x3[[1]]
+
+ 
+  m_article_id = as.integer(m)
+  m_owner <- "NLM"
+
+  #Getting the Pubmodel_article dataframe
+  pubmed_article.df[m,1] <- m_article_id   #primary key
+  pubmed_article.df[m,2] <- m_medlinecitation_status
+  pubmed_article.df[m,3] <- m_owner
+  pubmed_article.df[m,4] <- m_pmid_version
+  pubmed_article.df[m,5] <- m_pmid
+  pubmed_article.df[m,6] <- strDates1
+  pubmed_article.df[m,7] <- strDates2
+  pubmed_article.df[m,8] <- strDates3
+  pubmed_article.df[m,9] <- m_pubmodel_name
+  pubmed_article.df[m,10] <-m_article_title
+  pubmed_article.df[m,11] <-m_authorlist_ifcomplete
+  pubmed_article.df[m,12] <-m_language
+  pubmed_article.df[m,13] <-m_grantlist_ifcomplete
+} 
+
+```
+
+```{r}
+noPO=19
+
+for(m in 1:noPO){
+  
+node<- root[[m]]
+
+pubmed_article <- node[[1]]
+
+xpathjournal1 <-"//MedlineCitation/Article/Journal/ISSN"
+  
+issn_no<- xpathSApply(pubmed_article,xpathjournal1,xmlValue)
+j_issn_no<- issn_no[[m]]
+
+xpathjournal2 <-"//MedlineCitation/Article/Journal/ISSN"
+  
+issn_no_type<- xpathSApply(pubmed_article,xpathjournal2,xmlAttrs)
+j_issn_no_type<- issn_no_type[[m]]
+
+xpathjournal3 <-"//MedlineCitation/Article/Journal/JournalIssue"
+  
+issn_no_issue<- xpathSApply(pubmed_article,xpathjournal3,xmlAttrs)
+j_issn_issue<- issn_no_issue[[m]]
+
+xpathjournal4 <-"//MedlineCitation/Article/Journal/JournalIssue/Volume"
+  
+issn_volume_type<- xpathSApply(pubmed_article,xpathjournal4,xmlValue)
+j_issn_volume<- issn_volume_type[[m]]
+
+xpathjournal5 <-"//MedlineCitation/Article/Journal/JournalIssue/Issue"
+  
+issn_no_issues<- xpathSApply(pubmed_article,xpathjournal5,xmlValue)
+j_issn_no_issue<- issn_no_issues[[m]]
+
+xpathjournal6 <-"//MedlineCitation/Article/Journal/Title"
+  
+issn_no_title<- xpathSApply(pubmed_article,xpathjournal6,xmlValue)
+j_issn_no_title<- issn_no_title[[m]]
+
+xpathjournal7 <-"//MedlineCitation/Article/Journal/ISOAbbreviation"
+  
+issn_no_iso<- xpathSApply(pubmed_article,xpathjournal7,xmlValue)
+j_issn_no_ISOAbbreviation<- issn_no_iso[[m]]
+
+m_article_id = as.integer(m)
+
+xpathEx_year <-"//MedlineCitation/Article/Journal/JournalIssue/PubDate/MedlineDate|//MedlineCitation/Article/Journal/JournalIssue/PubDate/Year"
+    
+m_year <- xpathSApply(pubmed_article,xpathEx_year,xmlValue)
+trystring_year<-m_year[[m]]
+
+returnstring_year<-str_split(trystring_year," ")
+
+j_final_year<-returnstring_year[[1]][[1]]
+
+xpathEx_month <-"//MedlineCitation/Article/Journal/JournalIssue/PubDate/MedlineDate|//MedlineCitation/Article/Journal/JournalIssue/PubDate/Month"
+  
+m_year_m <- xpathSApply(pubmed_article,xpathEx_month,xmlValue)
+
+i=19
+while(i>=12)
+{
+  m_year_m[[i]]<-m_year_m[[i-1]]
+  i <- i-1
+}
+
+m_year_m[[12]]<-"Jun"
+
+trystring_year_m<-m_year_m[[m]]
+returnstring_year_m<-str_split(trystring_year_m," ")
+
+if(returnstring_year_m[[1]][[1]]=="2012" | returnstring_year_m[[1]][[1]]=="2013")
+{
+  month<-returnstring_year_m[[1]][[2]]
+  month<-str_split(month,"-")
+  final_month<-month[[1]][[1]]
+  
+}
+
+if(m==12)
+{
+  final_month <- "Jun"
+}
+
+else if(m!=2 & m!=4 & m!=12 & m!=13 & m!=18)
+{
+  final_month <- returnstring_year_m[[1]][[1]]
+
+}
+##Loading the dataframe 
+
+journal.df[m,1] <- m_article_id # foreign key
+journal.df[m,2] <- j_issn_no     #primary key
+journal.df[m,3] <- j_issn_no_type
+journal.df[m,4] <- j_issn_issue
+journal.df[m,5] <- j_issn_volume
+journal.df[m,6] <- j_issn_no_issue
+journal.df[m,7] <- j_issn_no_title
+journal.df[m,8] <- j_issn_no_ISOAbbreviation
+journal.df[m,9] <- j_final_year
+journal.df[m,10] <- final_month
+}
+```
+
+```{r}
+s=1;
+
+for(m in 1:19)
+{
+
+  node <- root[[m]]
+  pubmeddata_node<-node[[1]]
+  vals<-"count(./Article/AuthorList/Author)"
+  
+  no_of_children_authors<- xpathSApply(pubmeddata_node,vals,xmlChildren)
+
+  lastname<-"./Article/AuthorList/Author/LastName"
+  lastname_author<- xpathSApply(pubmeddata_node,lastname,xmlValue)
+
+  
+  forename<-"./Article/AuthorList/Author/ForeName"
+  forename_author<- xpathSApply(pubmeddata_node,forename,xmlValue)
+
+  
+  initials<-"./Article/AuthorList/Author/Initials"
+  initials_author<- xpathSApply(pubmeddata_node,initials,xmlValue)
+
+  
+  for(i in 1:no_of_children_authors)
+  {
+    
+      author.df[s,1]<-as.integer(m)
+      author.df[s,2]<-as.integer(s)
+      author.df[s,3]<-lastname_author[[i]]
+      author.df[s,4]<-forename_author[[i]]
+      author.df[s,5]<-initials_author[[i]]
+      s<-s+1
+  }
+  
+}
+
+```
+
+```{r}
+
+dbWriteTable(dbcon, name="author_star", value=author.df, overwrite = T)
+dbWriteTable(dbcon, name="journal_star", value=journal.df, overwrite = T)
+dbWriteTable(dbcon, name="pubmed_article_star", value=pubmed_article.df, overwrite = T)
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS fact_table;
+```
+
+
+Creating Fact Table
+```{sql connection = dbcon}
+CREATE TABLE fact_table(
+  article_id INT,
+  pmid INT,
+  article_pubmodel VARCHAR(300),
+  issn VARCHAR(300),
+  journal_volume VARCHAR(300),
+  journal_issue VARCHAR(300),
+  publication_year VARCHAR(300),
+  publication_month VARCHAR(300)
+);
+
+```
+
+```{sql connection = dbcon}
+INSERT INTO fact_table 
+SELECT article_id,pmid,article_pubmodel,journal_star.issn,journal_star.volume,journal_star.issue,journal_star.publication_year,journal_star.publication_month
+FROM pubmed_article_star INNER JOIN journal_star using (article_id)
+```
+
+
+A lot of these values are repeating in fact_table and other tables leading to redundancy. We are removing some columns which are not necessary and taking only necessary for dimension tables.
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS author_dimensional;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS journal_dimensional;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS article_dimensional;
+```
+
+
+````{sql connection=dbcon}
+CREATE TABLE author_dimensional AS SELECT article_id, author_id ,last_name ,first_name ,initials FROM author_star;
+```
+
+```{sql connection=dbcon}
+CREATE TABLE journal_dimensional AS SELECT issn,issn_type_name,journal_issue_cited_medium,volume,issue,Journal_title , iso_abbreviation FROM journal_star;
+```
+
+```{sql connection=dbcon}
+CREATE TABLE article_dimensional AS SELECT article_id ,medlinecitation_statusid,owner, pmid_version, dates_created , dates_completed ,dates_revised ,article_title ,if_author_list_complete ,language, if_grant_list_completed  FROM pubmed_article_star;
+```
+
+
+PART 2
+Q2.
+
+![ERD Diagram](C:/Users/Ved/Downloads/FactTable.png)
+
+
+Creating new tables which are needed
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS author;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS journal;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS pubmed_article;
+```
+
+```{sql connection=dbcon}
+CREATE TABLE pubmed_article(article_id INT,
+                          medlinecitation_statusid VARCHAR(300),
+                          owner VARCHAR(300),
+                          pmid_version VARCHAR(300),
+                          pmid INT,
+                          dates_created VARCHAR(300),
+                          dates_completed VARCHAR(300),
+                          dates_revised VARCHAR(300),
+                          article_pubmodel_id INT,
+                          article_title VARCHAR(300),
+                          if_author_list_complete VARCHAR(300),
+                          language VARCHAR(300),
+                          if_grant_list_completed VARCHAR(300)
+);
+```
+
+```{sql connection=dbcon}
+CREATE TABLE journal(
+                      article_id INT,
+                          issn VARCHAR(300),
+                          issn_type_name VARCHAR(300),
+                          journal_issue_cited_medium VARCHAR(300),
+                          volume VARCHAR(300),
+                          issue VARCHAR(300),
+                          Journal_title VARCHAR(300),
+                          publication_year VARCHAR(300),
+                          publication_month VARCHAR(300)
+);
+```
+```{sql connection=dbcon}
+CREATE TABLE author(
+        article_id INT,
+        author_id INT,
+        last_name VARCHAR(300),
+        first_name VARCHAR(300),
+        full_name VARCHAR(600)
+);
+```
+
+```{r warning=FALSE}
+pubmed_article.df <- data.frame (article_id = integer(),
+                          medlinecitation_statusid = integer(),
+                          owner = character(),
+                          pmid_version = character(),
+                          pmid = integer(),
+                          dates_created = character(),
+                          dates_completed = character(),
+                          dates_revised = character(),
+                          article_pubmodel_ID = integer(),
+                          article_title = character(),
+                          if_author_list_complete= character(),
+                          language = character(),
+                          if_grant_list_completed = character(),
+                          stringsAsFactors = FALSE) 
+
+
+
+journal.df <- data.frame (article_id = integer(),
+                          issn = character(),
+                          issn_type_name = character(),
+                          journal_issue_cited_medium = character(),
+                          volume = character(),
+                          issue = character(),
+                          Journal_title = character(),
+                          #iso_abbreviation = character(),
+                          publication_year=character(),
+                          publication_month=character(),
+                          stringsAsFactors = FALSE)
+
+
+
+author.df <- data.frame (article_id = integer(),
+                          author_id = integer(),
+                          last_name = character(),
+                          first_name = character(),
+                          #initials = character(),
+                          stringsAsFactors = FALSE)
+
+```
+
+```{r warning=FALSE}
+
+numPO=19
+
+
+for (m in 1:numPO){
+  
+  #print(m)
+  
+  node <- root[[m]]
+  
+  # Getting data from pubmed_article
+  pubmed_article <- node[[1]]
+  
+  #Getting Medline Status 
+  
+  medlinecitation_status <- xmlAttrs(pubmed_article)
+
+  m_medlinecitation_status<- medlinecitation_status[[2]]
+  
+  if(m_medlinecitation_status=="PubMed-not-MEDLINE")
+  {
+    m_medlinecitation_status=as.integer(1)
+  }
+  if(m_medlinecitation_status=="MEDLINE")
+  {
+    m_medlinecitation_status=as.integer(2)
+  }
+  #getting article pubmodel
+  
+  xpathEx00 <-"//MedlineCitation/Article"
+  
+  m_articlepubmodeltitle <- xpathSApply(pubmed_article,xpathEx00,xmlAttrs)
+  m_pubmodel_name<- m_articlepubmodeltitle[[m]]
+  
+  if(m_pubmodel_name=="Print-Electronic")
+  {
+    m_pubmodel_name=as.integer(1)
+  }
+  if(m_pubmodel_name=="Print")
+  {
+    m_pubmodel_name=as.integer(2)
+  }
+  
+  
+  
+  #Getting pmid and it's version
+  m_pmid <- xmlValue(pubmed_article[[1]][[1]])
+  b0 <- xmlAttrs(pubmed_article[[1]])
+  m_pmid_version<-b0[[1]]
+  
+  # Getting date created
+  date_created_year <- xmlValue(pubmed_article[[2]][[1]][[1]])
+  
+  
+  date_created_month <- xmlValue(pubmed_article[[2]][[2]][[1]])
+  
+  date_created_day <- xmlValue(pubmed_article[[2]][[3]][[1]])
+  
+  m_date_created <- paste(date_created_year, date_created_month, date_created_day, sep="-") %>% ymd() %>% as.Date()
+  
+  strDates1 <- as.character(m_date_created)
+
+  
+  #Getting Date Completed
+  date_completed_year <- xmlValue(pubmed_article[[3]][[1]][[1]])
+
+  
+  date_completed_month <- xmlValue(pubmed_article[[3]][[2]][[1]])
+
+  
+  date_completed_day <- xmlValue(pubmed_article[[3]][[3]][[1]])
+
+  
+  m_date_completed <- paste(date_completed_year, date_completed_month, date_completed_day, sep="-") %>% ymd() %>% as.Date()
+  
+  strDates2 <- as.character(m_date_completed)
+  
+
+
+  #Getting Date Revised
+  
+  date_revised_year <- xmlValue(pubmed_article[[4]][[1]][[1]])
+
+  
+  date_revised_month <- xmlValue(pubmed_article[[4]][[2]][[1]])
+
+  
+  date_revised_day <- xmlValue(pubmed_article[[4]][[3]][[1]])
+
+  
+  m_date_revised <- paste(date_revised_year, date_revised_month, date_revised_day, sep="-") %>% ymd() %>% as.Date()
+  
+  strDates3 <- as.character(m_date_revised)
+  
+  #Getting article_title
+  
+  
+
+  xpathEx0 <-"//MedlineCitation/Article/ArticleTitle"
+  
+  m_articletitle <- xpathSApply(pubmed_article,xpathEx0,xmlValue)
+  m_article_title<- m_articletitle[[m]]
+
+  #Getting AuthorListComplete
+  
+  xpathEx1 <-"//MedlineCitation/Article/AuthorList"
+
+
+  x1<-xpathSApply(pubmed_article,xpathEx1,xmlAttrs)
+ 
+  m_authorlist_ifcomplete <- x1[[1]]
+  
+  #getting language
+  
+  xpathEx2 <-"//MedlineCitation/Article/Language"
+  
+  x2 <- xpathSApply(pubmed_article,xpathEx2,xmlValue)
+  m_language <- x2[[1]]
+
+  #Checking if grant is completed
+  xpathEx3 <-"//MedlineCitation/Article/GrantList"
+
+
+  x3<-xpathSApply(pubmed_article,xpathEx3,xmlAttrs)
+  m_grantlist_ifcomplete <- x3[[1]]
+
+  ## Article Date Completed
+  
+  #assigning randomm values
+  m_article_id = as.integer(m)
+  m_owner <- "NLM"
+
+  #Getting the Pubmodel_article dataframe
+  pubmed_article.df[m,1] <- m_article_id   #primary key
+  pubmed_article.df[m,2] <- m_medlinecitation_status
+  pubmed_article.df[m,3] <- m_owner
+  pubmed_article.df[m,4] <- m_pmid_version
+  pubmed_article.df[m,5] <- m_pmid
+  pubmed_article.df[m,6] <- strDates1
+  pubmed_article.df[m,7] <- strDates2
+  pubmed_article.df[m,8] <- strDates3
+  pubmed_article.df[m,9] <- m_pubmodel_name
+  pubmed_article.df[m,10] <-m_article_title
+  pubmed_article.df[m,11] <-m_authorlist_ifcomplete
+  pubmed_article.df[m,12] <-m_language
+  pubmed_article.df[m,13] <-m_grantlist_ifcomplete
+} 
+row.names(pubmed_article.df) <- NULL
+
+``` 
+
+
+```{r}
+noPO=19
+
+for(m in 1:noPO){
+  
+node<- root[[m]]
+
+pubmed_article <- node[[1]]
+
+#getting ISSN nO
+xpathjournal1 <-"//MedlineCitation/Article/Journal/ISSN"
+  
+issn_no<- xpathSApply(pubmed_article,xpathjournal1,xmlValue)
+j_issn_no<- issn_no[[m]]
+
+#print(m)
+#print(j_issn_no)
+
+#getting ISSN TYPE
+xpathjournal2 <-"//MedlineCitation/Article/Journal/ISSN"
+  
+issn_no_type<- xpathSApply(pubmed_article,xpathjournal2,xmlAttrs)
+j_issn_no_type<- issn_no_type[[m]]
+
+if(j_issn_no_type=="Print")
+{
+  j_issn_no_type=as.integer(1)
+}
+if(j_issn_no_type=="Electronic")
+{
+  j_issn_no_type=as.integer(2)
+}
+
+
+#Getting issue medium
+xpathjournal3 <-"//MedlineCitation/Article/Journal/JournalIssue"
+  
+issn_no_issue<- xpathSApply(pubmed_article,xpathjournal3,xmlAttrs)
+j_issn_issue<- issn_no_issue[[m]]
+
+
+if(j_issn_issue=="Print")
+{
+  j_issn_issue=as.integer(1)
+}
+if(j_issn_issue=="Internet")
+{
+  j_issn_issue=as.integer(2)
+}
+
+
+#getting volume of Journal
+
+xpathjournal4 <-"//MedlineCitation/Article/Journal/JournalIssue/Volume"
+  
+issn_volume_type<- xpathSApply(pubmed_article,xpathjournal4,xmlValue)
+j_issn_volume<- issn_volume_type[[m]]
+
+#Getting issue of Journal
+
+xpathjournal5 <-"//MedlineCitation/Article/Journal/JournalIssue/Issue"
+  
+issn_no_issues<- xpathSApply(pubmed_article,xpathjournal5,xmlValue)
+j_issn_no_issue<- issn_no_issues[[m]]
+
+#getting title
+xpathjournal6 <-"//MedlineCitation/Article/Journal/Title"
+  
+issn_no_title<- xpathSApply(pubmed_article,xpathjournal6,xmlValue)
+j_issn_no_title<- issn_no_title[[m]]
+
+#getting ISOAbbreviation
+xpathjournal7 <-"//MedlineCitation/Article/Journal/ISOAbbreviation"
+  
+issn_no_iso<- xpathSApply(pubmed_article,xpathjournal7,xmlValue)
+j_issn_no_ISOAbbreviation<- issn_no_iso[[m]]
+
+m_article_id = as.integer(m)
+
+#Getting pub year of the Journal
+xpathEx_year <-"//MedlineCitation/Article/Journal/JournalIssue/PubDate/MedlineDate|//MedlineCitation/Article/Journal/JournalIssue/PubDate/Year"
+    
+m_year <- xpathSApply(pubmed_article,xpathEx_year,xmlValue)
+trystring_year<-m_year[[m]]
+
+returnstring_year<-str_split(trystring_year," ")
+
+  
+j_final_year<-returnstring_year[[1]][[1]]
+
+#Getting pub month of the Journal
+
+xpathEx_month <-"//MedlineCitation/Article/Journal/JournalIssue/PubDate/MedlineDate|//MedlineCitation/Article/Journal/JournalIssue/PubDate/Month"
+  
+m_year_m <- xpathSApply(pubmed_article,xpathEx_month,xmlValue)
+
+i=19
+while(i>=12)
+{
+  m_year_m[[i]]<-m_year_m[[i-1]]
+  i <- i-1
+}
+
+m_year_m[[12]]<-"Jun"
+
+trystring_year_m<-m_year_m[[m]]
+returnstring_year_m<-str_split(trystring_year_m," ")
+
+
+if(returnstring_year_m[[1]][[1]]=="2012" | returnstring_year_m[[1]][[1]]=="2013")
+{
+  month<-returnstring_year_m[[1]][[2]]
+  month<-str_split(month,"-")
+  final_month<-month[[1]][[1]]
+
+}
+
+if(m==12)
+{
+  final_month <- "Jun"
+  #print(final_month)
+  #print(m)
+}
+
+else if(m!=2 & m!=4 & m!=12 & m!=13 & m!=18)
+{
+  final_month <- returnstring_year_m[[1]][[1]]
+  
+
+  
+}
+
+
+
+journal.df[m,1] <- m_article_id # foreign key
+journal.df[m,2] <- j_issn_no     #primary key
+journal.df[m,3] <- j_issn_no_type
+journal.df[m,4] <- j_issn_issue
+journal.df[m,5] <- j_issn_volume
+journal.df[m,6] <- j_issn_no_issue
+journal.df[m,7] <- j_issn_no_title
+
+journal.df[m,8] <- j_final_year
+journal.df[m,9] <- final_month
+
+}
+row.names(journal.df) <- NULL
+
+
+```
+
+
+```{r}
+summ=1;
+
+for(m in 1:19)
+{
+  
+
+  node <- root[[m]]
+  pubmeddata_node<-node[[1]]
+  vals<-"count(./Article/AuthorList/Author)"
+  
+  no_of_children_authors<- xpathSApply(pubmeddata_node,vals,xmlChildren)
+
+  lastname<-"./Article/AuthorList/Author/LastName"
+  lastname_author<- xpathSApply(pubmeddata_node,lastname,xmlValue)
+
+  
+  forename<-"./Article/AuthorList/Author/ForeName"
+  forename_author<- xpathSApply(pubmeddata_node,forename,xmlValue)
+
+  
+  initials<-"./Article/AuthorList/Author/Initials"
+  initials_author<- xpathSApply(pubmeddata_node,initials,xmlValue)
+
+  
+  for(i in 1:no_of_children_authors)
+  {
+    
+      author.df[summ,1]<-as.integer(m)
+      author.df[summ,2]<-as.integer(summ)
+      author.df[summ,3]<-lastname_author[[i]]
+      author.df[summ,4]<-forename_author[[i]]
+      #author.df[summ,5]<-initials_author[[i]]
+      summ<-summ+1
+  }
+    
+}
+
+author.df$full_name <- paste(author.df$first_name, author.df$last_name)
+
+row.names(author.df) <- NULL
+
+
+```
+
+```{r}
+dbWriteTable(dbcon, name="pubmed_article", value=pubmed_article.df, overwrite = T)
+dbWriteTable(dbcon, name="journal", value=journal.df, overwrite = T)
+dbWriteTable(dbcon, name="author", value=author.df, overwrite = T)
+
+
+
+```
+
+
+```{sql connection = dbcon}
+DROP TABLE IF EXISTS author_summary_fact_table;
+
+```
+
+```{sql connection = dbcon}
+DROP TABLE IF EXISTS journal_summary_fact_table;
+```
+
+# For Author
+```{sql connection = dbcon}
+CREATE TABLE author_summary_fact_table(
+  article_id INT,
+  issn VARCHAR(300),
+  publication_year VARCHAR(300),
+  author_id INT,
+  first_name VARCHAR(300),
+  last_name VARCHAR(300),
+  full_name VARCHAR(600),
+  count INT
+)
+```
+
+
+```{sql connection = dbcon}
+INSERT INTO author_summary_fact_table 
+SELECT pubmed_article.article_id, journal.issn, journal.publication_year, author.author_id, author.first_name, author.last_name,author.full_name, count(distinct(author.author_id)) FROM pubmed_article INNER JOIN JOURNAL using (article_id) INNER JOIN author using (article_id) group by publication_year,LOWER(full_name);
+```
+
+```{sql connection = dbcon}
+select * from author_summary_fact_table ;
+```
+
+```{sql connection = dbcon}
+CREATE TABLE journal_summary_fact_table(
+  publication_year VARCHAR(300),
+  journal_count INT
+)
+
+```
+
+```{sql connection = dbcon}
+INSERT INTO journal_summary_fact_table 
+SELECT journal.publication_year, count(distinct(pubmed_article.article_id)) FROM pubmed_article INNER JOIN JOURNAL using (article_id) INNER JOIN author using (article_id) group by publication_year;
+```
+
+```{sql connection = dbcon}
+select * from journal_summary_fact_table ;
+```
+PART 3
+The three queries that we have planned to run are - 
+a. Number of articles published in each month.
+b. Number of articles published in each Year.
+c. Count of Type of Articles published in each month.
+
+a.
+````{sql connection=dbcon}
+select publication_month, count(pmid) from fact_table group by publication_month;
+```
+b.
+```{sql connection=dbcon}
+select publication_year, count(pmid) from fact_table group by publication_year;
+```
+
+c.
+```{sql connection=dbcon}
+select article_pubmodel, publication_month, count(pmid) from fact_table group by article_pubmodel, publication_month;
+```
+
+
+
+```{r}
+dbDisconnect(dbcon)
+```
